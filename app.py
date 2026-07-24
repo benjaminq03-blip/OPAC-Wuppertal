@@ -13,15 +13,12 @@ st.write(
     " Verfügbarkeits-Check!"
 )
 
-# Suchfeld
 query = st.text_input(
-    "Buchtitel, Autor oder ISBN eingeben:", placeholder="z. B. Wanze Muldon, Astrid Lingren oder 978..."
+    "Buchtitel, Autor oder ISBN eingeben:", placeholder="z. B. Das Sams, Astrid Lindgren oder 978..."
 )
 
 def smart_typo_correction(text):
     text_lower = text.strip().lower()
-    
-    # Bekannte Stolpersteine und Tippfehler für Titel und Autoren
     corrections = {
         "das sans": "Das Sams",
         "wanze muldon": "Die Wanze",
@@ -29,17 +26,14 @@ def smart_typo_correction(text):
         "astrid lingren": "Astrid Lindgren",
         "michael ende": "Michael Ende",
     }
-    
     if text_lower in corrections:
         corrected = corrections[text_lower]
         st.info(f"💡 Meintest du **'{corrected}'**? (Automatisch korrigiert)")
         return corrected
-        
     return text
 
 if st.button("Suchen"):
   if query:
-    # Prüfen, ob eine ISBN eingegeben wurde
     clean_query = re.sub(r'[^0-9X]', '', query.upper())
     is_isbn = len(clean_query) == 10 or len(clean_query) == 13
     
@@ -50,15 +44,24 @@ if st.button("Suchen"):
         search_query = smart_typo_correction(query)
 
     with st.spinner("Durchsuche OPAC und prüfe Standorte..."):
+      # Hier nutzen wir die exakten Formular-Parameter der OPAC-Suchmaske
       url = "https://webopac.wuppertal.de/webOPACClient/search.do"
-      params = {"methodToCall": "submit", "queryString": search_query, "searchType": "2"}
-      headers = {"User-Agent": "Mozilla/5.0"}
+      params = {
+          "methodToCall": "submit",
+          "queryString": search_query,
+          "searchType": "2"  # Typ 2 entspricht meist der Stichwort-/Titel-Suche im Sisis-OPAC
+      }
+      headers = {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://webopac.wuppertal.de/webOPACClient/search.do"
+      }
 
       try:
         response = requests.get(url, params=params, headers=headers)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
+        # Wir suchen nach allen Tabellenzeilen, die Treffer enthalten könnten
         rows = soup.find_all("tr")
         results = []
 
@@ -66,7 +69,8 @@ if st.button("Suchen"):
           cols = row.find_all("td")
           if cols:
             row_text = " | ".join([c.get_text(strip=True) for c in cols if c.get_text(strip=True)])
-            if len(row_text) > 10:
+            # Wir filtern unnötige kleine Zeilen heraus und behalten echte Eintrags-Infos
+            if len(row_text) > 15 and "Suche" not in row_text and "Treffer" not in row_text:
               results.append(row_text)
 
         if results:
@@ -74,7 +78,6 @@ if st.button("Suchen"):
           for idx, res in enumerate(results[:15], 1):
             lower_res = res.lower()
             
-            # Status-Erkennung für Verfügbarkeit
             if "entliehen" in lower_res or "ausgeliehen" in lower_res:
               status = "🔴 Entliehen"
             elif "verfügbar" in lower_res or "frei" in lower_res or "im regal" in lower_res:
@@ -87,7 +90,7 @@ if st.button("Suchen"):
               st.divider()
         else:
           st.warning(
-              "Keine Treffer im OPAC gefunden. Versuche es mit einem anderen Begriff."
+              "Keine Treffer im OPAC gefunden. Möglicherweise ist die Suchstruktur vom WebOPAC verschachtelt. Schau mal, ob der Begriff direkt auf der Website funktioniert."
           )
       except Exception as e:
         st.error(f"Verbindungsfehler zum OPAC: {e}")
