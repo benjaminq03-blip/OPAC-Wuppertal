@@ -9,8 +9,7 @@ st.set_page_config(
 
 st.title("📚 Smarte Wuppertal OPAC-Suche")
 st.write(
-    "Mit intelligenter Tippfehler-Korrektur, ISBN-Abgleich und"
-    " Verfügbarkeits-Check!"
+    "Direkt gekoppelt an den WebOPAC der Stadtbibliothek Wuppertal!"
 )
 
 query = st.text_input(
@@ -43,32 +42,35 @@ if st.button("Suchen"):
     else:
         search_query = smart_typo_correction(query)
 
-    with st.spinner("Durchsuche OPAC und prüfe Standorte..."):
-      # Wir nutzen eine Session, um Cookies und Sitzungs-IDs des OPACs mitzuführen
+    with st.spinner("Verbinde mit WebOPAC Wuppertal..."):
+      # Wir nutzen eine persistente Session
       session = requests.Session()
-      base_url = "https://webopac.wuppertal.de/webOPACClient/search.do"
       
       headers = {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://webopac.wuppertal.de/webOPACClient/search.do"
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.9,en;q=0.9"
       }
 
       try:
-        # 1. Schritt: Erst einmal die Hauptseite aufrufen, um eine gültige Session zu bekommen
-        session.get(base_url, headers=headers)
+        # 1. Wir rufen die offizielle Startseite auf, um die Session und Cookies zu initialisieren
+        start_url = "https://webopac.wuppertal.de/webOPACClient/start.do"
+        session.get(start_url, headers=headers)
 
-        # 2. Schritt: Die echte Suchanfrage als POST-Formular absenden
+        # 2. Jetzt schicken wir die Suchanfrage an die Such-Schnittstelle, die von der Startseite aus bedient wird
+        search_url = "https://webopac.wuppertal.de/webOPACClient/search.do"
         payload = {
             "methodToCall": "submit",
             "queryString": search_query,
             "searchType": "2"
         }
         
-        response = session.post(base_url, data=payload, headers=headers)
+        response = session.post(search_url, data=payload, headers=headers)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, "html.parser")
 
+        # Wir suchen nach allen Tabellenzeilen, die Treffer enthalten
         rows = soup.find_all("tr")
         results = []
 
@@ -80,7 +82,7 @@ if st.button("Suchen"):
               results.append(row_text)
 
         if results:
-          st.success(f"{len(results)} Einträge/Zweigstellen gefunden:")
+          st.success(f"{len(results)} Einträge gefunden:")
           for idx, res in enumerate(results[:15], 1):
             lower_res = res.lower()
             
@@ -96,9 +98,9 @@ if st.button("Suchen"):
               st.divider()
         else:
           st.warning(
-              "Keine Treffer im OPAC gefunden. Bitte überprüfe den Begriff oder versuche es mit einem anderen Titel."
+              "Keine Treffer über die automatisierte Abfrage. Der WebOPAC verlangt eventuell JavaScript für die Formularvalidierung."
           )
       except Exception as e:
-        st.error(f"Verbindungsfehler zum OPAC: {e}")
+        st.error(f"Verbindungsfehler: {e}")
   else:
-    st.warning("Bitte gib einen Suchbegriff oder eine ISBN ein.")
+    st.warning("Bitte gib einen Suchbegriff ein.")
