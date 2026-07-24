@@ -42,44 +42,43 @@ if st.button("Suchen"):
     else:
         search_query = smart_typo_correction(query)
 
-    with st.spinner("Verbinde mit WebOPAC Wuppertal..."):
-      # Wir nutzen eine persistente Session
+    with st.spinner("Trickse das OPAC-System aus..."):
       session = requests.Session()
       
       headers = {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.9,en;q=0.9"
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
       }
 
       try:
-        # 1. Wir rufen die offizielle Startseite auf, um die Session und Cookies zu initialisieren
-        start_url = "https://webopac.wuppertal.de/webOPACClient/start.do"
-        session.get(start_url, headers=headers)
-
-        # 2. Jetzt schicken wir die Suchanfrage an die Such-Schnittstelle, die von der Startseite aus bedient wird
+        # Wir nutzen einen GET-Request mit den exakten Sisis-Parametern für die Schnellsuche
         search_url = "https://webopac.wuppertal.de/webOPACClient/search.do"
-        payload = {
+        params = {
             "methodToCall": "submit",
-            "queryString": search_query,
-            "searchType": "2"
+            "searchCategories[0]": "-1",  # -1 steht im Sisis-System oft für "Alle Felder"
+            "searchString[0]": search_query,
+            "submitSearch": "Suchen",
+            "callingPage": "searchPreferences"
         }
         
-        response = session.post(search_url, data=payload, headers=headers)
+        # Direkter Aufruf der Such-URL (Deep-Link Methode)
+        response = session.get(search_url, params=params, headers=headers)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Wir suchen nach allen Tabellenzeilen, die Treffer enthalten
+        # Wir suchen gezielt nach Zeilen, die Treffer enthalten
         rows = soup.find_all("tr")
         results = []
 
         for row in rows:
-          cols = row.find_all("td")
-          if cols:
-            row_text = " | ".join([c.get_text(strip=True) for c in cols if c.get_text(strip=True)])
-            if len(row_text) > 15 and "Suche" not in row_text and "Treffer" not in row_text:
-              results.append(row_text)
+          # Viele Bibliotheks-Kataloge nutzen 'odd' oder 'even' Klassen für die Tabellenzeilen
+          if "odd" in row.get("class", []) or "even" in row.get("class", []) or row.find("td"):
+              cols = row.find_all("td")
+              if cols:
+                row_text = " | ".join([c.get_text(strip=True) for c in cols if c.get_text(strip=True)])
+                if len(row_text) > 15 and "Suche" not in row_text and "Treffer" not in row_text:
+                  results.append(row_text)
 
         if results:
           st.success(f"{len(results)} Einträge gefunden:")
@@ -97,10 +96,9 @@ if st.button("Suchen"):
               st.markdown(f"**{idx}. [{status}]**\n\n{res}")
               st.divider()
         else:
-          st.warning(
-              "Keine Treffer über die automatisierte Abfrage. Der WebOPAC verlangt eventuell JavaScript für die Formularvalidierung."
-          )
+          # Falls immer noch nichts gefunden wird, geben wir den HTML-Titel aus, um zu sehen, wo wir gelandet sind
+          st.warning("Immer noch keine Treffer. Das System blockiert die Anfrage.")
+          st.info(f"Wir sind auf folgender Seite gelandet: **{soup.title.string if soup.title else 'Unbekannt'}**")
+          
       except Exception as e:
         st.error(f"Verbindungsfehler: {e}")
-  else:
-    st.warning("Bitte gib einen Suchbegriff ein.")
